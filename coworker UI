@@ -1,0 +1,297 @@
+cd /home/site/wwwroot || exit 1
+
+# Backups (just in case)
+[ -f index.html ] && cp -f index.html index.html.bak.$(date +%Y%m%d-%H%M%S)
+[ -f public/index.html ] && cp -f public/index.html public/index.html.bak.$(date +%Y%m%d-%H%M%S)
+
+# Ensure logo (no-op if present)
+if [ ! -f logo.png ]; then
+  curl -L -o logo.png "https://www.thezincgroup.com/wp-content/uploads/2025/08/Zinc-Group-Ltd-Logo-P2935.png" || true
+fi
+
+# Write updated HTML (adds CLEAR CHAT button & shows sources under answers)
+cat > index.html <<'HTML'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zinc Coworker</title>
+<style>
+  :root{
+    --page-bg:#d7dfec;
+    --panel:#ffffff;
+    --bubble-a:#38B6FF;
+    --bubble-q:#b8c7e0;
+    --text:#1b2330;
+    --muted:#546479;
+    --accent:#00bfa3;
+    --shadow:0 4px 18px rgba(0,0,0,.15);
+    --wrap-w:1180px;   /* wide layout */
+    --sidebar-w:300px; /* history width */
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; font-family:Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background:var(--page-bg); color:var(--text);
+    display:flex; flex-direction:column;
+  }
+
+  /* Header */
+  header{
+    position:sticky; top:0; z-index:20; background:var(--page-bg);
+    padding:14px 18px; box-shadow:0 2px 6px rgba(0,0,0,.05); text-align:center;
+  }
+  header img{height:64px;width:auto;display:block;margin:0 auto}
+  header h1{margin:6px 0 0;font-size:22px;font-weight:800}
+
+  /* Main layout */
+  .main{
+    flex:1; display:flex; gap:14px; width:100%;
+    max-width:var(--wrap-w); margin:0 auto; padding:10px 14px;
+  }
+
+  /* Chat panel (left) */
+  .chat-panel{
+    flex:1; min-width:0;
+    background:var(--panel); border-radius:14px; box-shadow:var(--shadow);
+    padding:16px; display:flex; flex-direction:column; gap:12px;
+  }
+  .panel-header{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  .hint{color:var(--muted);font-size:14px}
+  .btn{
+    background:#eef3f9; color:#183046; border:1px solid #d8e1ec; border-radius:10px;
+    padding:8px 12px; font-size:14px; cursor:pointer;
+  }
+  .btn:hover{ background:#e6eef7 }
+
+  .chat{
+    flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:14px;
+    background:#fff; border-radius:10px; padding:16px;
+  }
+  .bubble{max-width:92%; padding:12px 15px; border-radius:14px; line-height:1.6; font-size:15px; white-space:pre-wrap; word-wrap:break-word}
+  .a{background:var(--bubble-a); align-self:flex-start}
+  .q{background:var(--bubble-q); align-self:flex-end}
+
+  /* Sources line */
+  .sources{align-self:flex-start; margin:-6px 0 6px 0; color:#345; font-size:13px}
+  .sources strong{font-weight:700}
+  .sources .src{display:inline-block; margin-right:10px}
+
+  /* Sidebar (right) */
+  .sidebar{
+    width:var(--sidebar-w);
+    background:#ffffff; border-radius:14px; box-shadow:var(--shadow);
+    padding:14px; display:flex; flex-direction:column; gap:10px;
+    height: fit-content; align-self:flex-start;
+  }
+  .sidebar h2{margin:0 0 6px 0; font-size:16px; text-align:center}
+  .history-list{
+    max-height:60vh; overflow:auto; background:#f7faff; border:1px solid #e1e9f5; border-radius:10px;
+  }
+  .history-item{padding:8px 10px; border-bottom:1px solid #e9eef6; cursor:pointer; font-size:14px}
+  .history-item:hover{background:#edf3fb}
+  .history-item:last-child{border-bottom:none}
+
+  /* Fixed composer */
+  #composer{
+    position:fixed; left:0; right:0; bottom:0; z-index:9999;
+    background:var(--page-bg);
+    box-shadow:0 -2px 10px rgba(0,0,0,.08);
+    padding:10px 0;
+  }
+  #composer .inner{
+    max-width:var(--wrap-w); margin:0 auto; padding:0 14px;
+    display:flex; gap:12px; align-items:center;
+  }
+  #q{
+    flex:1; padding:12px 14px; min-height:44px;
+    border-radius:10px; border:1px solid #ccd3df; background:#f4f7fc; color:#1b2330; font-size:15px;
+  }
+  #send{
+    min-height:44px; padding:12px 16px; font-size:15px; border:none; border-radius:10px;
+    background:var(--accent); color:#fff; cursor:pointer; box-shadow:0 3px 10px rgba(0,191,163,.3);
+  }
+  #send:disabled{opacity:.6; cursor:not-allowed}
+
+  @media (max-width: 1200px){
+    :root{ --wrap-w: 94vw; --sidebar-w: 280px; }
+  }
+  @media (max-width: 980px){
+    .main{flex-direction:column}
+    .sidebar{width:100%}
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.png" alt="Zinc Logo">
+  <h1>Zinc Coworker - Your Virtual Colleague</h1>
+</header>
+
+<div class="main">
+  <!-- Left: Chat panel -->
+  <div class="chat-panel">
+    <div class="panel-header">
+      <div class="hint">Ask about client policies or general Zinc questions for example - What is the TEXAS model?.</div>
+      <!-- CLEAR CHAT button (main chat area) -->
+      <button class="btn" id="clearChat">Clear Chat</button>
+    </div>
+
+    <div id="chat" class="chat">
+      <div class="bubble a">Hello! Would you like me to answer any questions about clients, or something more general about Zinc?</div>
+    </div>
+  </div>
+
+  <!-- Right: History sidebar -->
+  <aside class="sidebar">
+    <h2>Chat History</h2>
+    <div id="historyList" class="history-list"></div>
+    <button class="btn" id="clearHistory">Clear History</button>
+  </aside>
+</div>
+
+<!-- Fixed input bar -->
+<div id="composer">
+  <div class="inner">
+    <input id="q" type="text" placeholder="Type your question and press Enter…">
+    <button id="send">Send</button>
+  </div>
+</div>
+
+<script>
+const chat = document.getElementById('chat');
+const qEl  = document.getElementById('q');
+const sendBtn = document.getElementById('send');
+
+const clearChatBtn = document.getElementById('clearChat');
+const clearHistoryBtn = document.getElementById('clearHistory');
+const historyList = document.getElementById('historyList');
+
+/* Ensure chat bottom is clear of fixed composer */
+function padForComposer(){
+  const composer = document.getElementById('composer');
+  const h = composer.getBoundingClientRect().height || 80;
+  chat.style.paddingBottom = (h + 16) + 'px';
+}
+padForComposer();
+window.addEventListener('resize', padForComposer);
+
+/* Bubble + sources rendering */
+function renderSources(sources){
+  if (!Array.isArray(sources) || sources.length === 0) return null;
+  // At least 1, up to 3 shown
+  const top = sources.slice(0, 3);
+  const div = document.createElement('div');
+  div.className = 'sources';
+  const label = document.createElement('strong');
+  label.textContent = 'Sources: ';
+  div.appendChild(label);
+  top.forEach((s, i) => {
+    const span = document.createElement('span');
+    span.className = 'src';
+    // Prefer name; fallback to id/url if provided
+    const txt = s?.name || s?.id || s?.url || 'source';
+    span.textContent = txt + (i < top.length - 1 ? '' : '');
+    div.appendChild(span);
+  });
+  return div;
+}
+
+function addBubble(text, cls='a', sources){
+  const div = document.createElement('div');
+  div.className = 'bubble ' + cls;
+  div.textContent = text;
+  chat.appendChild(div);
+
+  // Only show sources under assistant replies
+  if (cls === 'a'){
+    const sEl = renderSources(sources);
+    if (sEl) chat.appendChild(sEl);
+  }
+
+  div.scrollIntoView({behavior:'smooth', block:'end'});
+}
+
+/* Simple in-memory history (per tab). Click to re-ask */
+let history = [];
+function addToHistory(q){
+  history.push(q);
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  item.textContent = q;
+  item.title = 'Click to re-ask';
+  item.onclick = () => { qEl.value = q; qEl.focus(); };
+  historyList.insertBefore(item, historyList.firstChild); // newest on top
+}
+
+/* Buttons */
+function clearChat(){
+  chat.innerHTML = '';
+  addBubble('Chat cleared. You can start again.','a');
+}
+function clearHistoryUI(){
+  history = [];
+  historyList.innerHTML = '';
+}
+
+/* Greeting */
+function isGreeting(text){
+  return /^(hi|hello|hey|yo|good (morning|afternoon|evening))\b/i.test(text.trim());
+}
+
+/* Ask flow */
+async function ask(q){
+  addBubble(q,'q');
+  addToHistory(q);
+
+  if(isGreeting(q)){
+    addBubble('Hello! Would you like me to answer any questions about clients, or something more general about Zinc?','a');
+    return;
+  }
+
+  sendBtn.disabled = true;
+  try{
+    const r = await fetch('/api/ask', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ q })
+    });
+    const j = await r.json();
+    if (j && j.ok) addBubble(j.answer || 'No answer.','a', j.sources);
+    else addBubble((j && j.answer) || 'I can’t find that in Zinc’s indexed documents.','a');
+  }catch(e){
+    addBubble('Server error.','a');
+  }
+  sendBtn.disabled = false;
+}
+
+/* Events */
+qEl.addEventListener('keydown', e=>{
+  if(e.key === 'Enter'){
+    const v = qEl.value.trim();
+    if (v){ qEl.value=''; ask(v); }
+  }
+});
+sendBtn.addEventListener('click', ()=>{
+  const v = qEl.value.trim();
+  if (v){ qEl.value=''; ask(v); }
+});
+clearChatBtn.addEventListener('click', clearChat);
+clearHistoryBtn.addEventListener('click', clearHistoryUI);
+</script>
+</body>
+</html>
+HTML
+
+# Also copy to /public (many node templates serve /public first)
+mkdir -p public
+cp -f index.html public/index.html
+
+# Restart app
+touch /home/site/wwwroot/restart.txt
+
+echo "Deployed: Clear Chat button in main panel + sources under assistant replies."
