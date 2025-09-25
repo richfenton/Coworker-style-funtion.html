@@ -1,0 +1,509 @@
+cd /home/site/wwwroot || exit 1
+
+# Backups
+[ -f index.html ] && cp -f index.html index.html.bak.$(date +%Y%m%d-%H%M%S)
+[ -f public/index.html ] && cp -f public/index.html public/index.html.bak.$(date +%Y%m%d-%H%M%S)
+
+# Ensure logo (no-op if present)
+if [ ! -f logo.png ]; then
+  curl -L -o logo.png "https://www.thezincgroup.com/wp-content/uploads/2025/08/Zinc-Group-Ltd-Logo-P2935.png" || true
+fi
+
+# Deploy updated UI with persistent history, export, dark mode, typing indicator
+cat > index.html <<'HTML'
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zinc Coworker</title>
+<style>
+  :root{
+    --page-bg:#d7dfec;
+    --panel:#ffffff;
+    --bubble-a:#38B6FF;
+    --bubble-q:#b8c7e0;
+    --text:#1b2330;
+    --muted:#546479;
+    --accent:#00bfa3;
+    --shadow:0 4px 18px rgba(0,0,0,.15);
+    --wrap-w:1180px;
+    --sidebar-w:300px;
+    --chip-bg:#f2f7ff;
+    --chip-bd:#dbe7ff;
+    --copy-bg:#eaf7f4;
+    --copy-bd:#bfeee2;
+  }
+  /* Dark theme variables */
+  [data-theme="dark"]{
+    --page-bg:#141a22;
+    --panel:#1b2430;
+    --bubble-a:#0f3a33;
+    --bubble-q:#26344a;
+    --text:#e6eef8;
+    --muted:#a7b1c0;
+    --accent:#00d1b3;
+    --shadow:0 4px 18px rgba(0,0,0,.35);
+    --chip-bg:#1f2b3c;
+    --chip-bd:#2b3b52;
+    --copy-bg:#173b36;
+    --copy-bd:#0e5a4c;
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; font-family:Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background:var(--page-bg); color:var(--text);
+    display:flex; flex-direction:column;
+  }
+
+  /* Header */
+  header{
+    position:sticky; top:0; z-index:20; background:var(--page-bg);
+    padding:14px 18px; box-shadow:0 2px 6px rgba(0,0,0,.05); text-align:center;
+  }
+  header img{height:64px;width:auto;display:block;margin:0 auto}
+  header h1{margin:6px 0 0;font-size:22px;font-weight:800}
+  .top-actions{position:absolute; right:16px; top:12px; display:flex; gap:8px}
+  .btn-mini{
+    background:#eef3f9; color:#183046; border:1px solid #d8e1ec; border-radius:10px;
+    padding:6px 10px; font-size:13px; cursor:pointer;
+  }
+  [data-theme="dark"] .btn-mini{ background:#223249; color:#cfe0ff; border-color:#2b3b52 }
+
+  .main{
+    flex:1; display:flex; gap:14px; width:100%;
+    max-width:var(--wrap-w); margin:0 auto; padding:10px 14px;
+  }
+
+  /* Chat panel (left) */
+  .chat-panel{
+    flex:1; min-width:0;
+    background:var(--panel); border-radius:14px; box-shadow:var(--shadow);
+    padding:16px; display:flex; flex-direction:column; gap:12px;
+  }
+  .panel-header{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  .hint{color:var(--muted);font-size:14px}
+  .btn{
+    background:#eef3f9; color:#183046; border:1px solid #d8e1ec; border-radius:10px;
+    padding:8px 12px; font-size:14px; cursor:pointer;
+  }
+  .btn:hover{ background:#e6eef7 }
+  [data-theme="dark"] .btn{ background:#223249; color:#cfe0ff; border-color:#2b3b52 }
+  [data-theme="dark"] .btn:hover{ background:#243958 }
+
+  /* Suggestions row */
+  .suggestions{display:flex; gap:8px; flex-wrap:wrap}
+  .chip{
+    background:var(--chip-bg); border:1px solid var(--chip-bd); color:var(--text);
+    padding:6px 10px; border-radius:999px; font-size:13px; cursor:pointer;
+  }
+  .chip:hover{filter:brightness(1.05)}
+
+  .chat{
+    flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:14px;
+    background:var(--panel); border-radius:10px; padding:16px;
+  }
+  .bubble{max-width:92%; padding:12px 15px; border-radius:14px; line-height:1.6; font-size:15px; white-space:pre-wrap; word-wrap:break-word}
+  .a{background:var(--bubble-a); align-self:flex-start}
+  .q{background:var(--bubble-q); align-self:flex-end}
+
+  .sources{align-self:flex-start; margin:-6px 0 4px 0; color:#cfe; font-size:13px}
+  .sources strong{font-weight:700}
+  .sources .src{display:inline-block; margin-right:10px}
+  [data-theme="light"] .sources{color:#345}
+
+  /* Copy row under assistant bubble */
+  .copy-row{
+    align-self:flex-start; margin:-2px 0 6px; font-size:13px;
+    display:flex; gap:8px; align-items:center;
+  }
+  .copy-btn{
+    background:var(--copy-bg); color:#0c3; border:1px solid var(--copy-bd); border-radius:8px;
+    padding:4px 8px; cursor:pointer;
+  }
+  .copy-btn:hover{ filter:brightness(1.05) }
+  .copy-ok{color:#2a7a5f}
+
+  /* Typing indicator */
+  .typing{align-self:flex-start; display:flex; gap:6px; align-items:center; color:var(--muted); font-size:14px}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);opacity:.5;animation:bounce 1.2s infinite}
+  .dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+  @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}
+
+  /* Sidebar (right) */
+  .sidebar{
+    width:var(--sidebar-w);
+    background:var(--panel); border-radius:14px; box-shadow:var(--shadow);
+    padding:14px; display:flex; flex-direction:column; gap:10px;
+    height: fit-content; align-self:flex-start;
+  }
+  .sidebar h2{margin:0 0 6px 0; font-size:16px; text-align:center}
+  .history-list{
+    max-height:60vh; overflow:auto; background:rgba(0,0,0,0.03); border:1px solid rgba(0,0,0,0.08); border-radius:10px;
+  }
+  [data-theme="dark"] .history-list{ background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12) }
+  .history-item{padding:8px 10px; border-bottom:1px solid rgba(0,0,0,0.08); cursor:pointer; font-size:14px}
+  .history-item:hover{filter:brightness(1.06)}
+  .history-item:last-child{border-bottom:none}
+  .side-buttons{display:flex; flex-direction:column; gap:8px}
+
+  /* Fixed composer */
+  #composer{
+    position:fixed; left:0; right:0; bottom:0; z-index:9999;
+    background:var(--page-bg);
+    box-shadow:0 -2px 10px rgba(0,0,0,.08);
+    padding:10px 0;
+  }
+  #composer .inner{
+    max-width:var(--wrap-w); margin:0 auto; padding:0 14px;
+    display:flex; gap:12px; align-items:center;
+  }
+  #q{
+    flex:1; padding:12px 14px; min-height:44px;
+    border-radius:10px; border:1px solid #ccd3df; background:#f4f7fc; color:var(--text); font-size:15px;
+  }
+  [data-theme="dark"] #q{ background:#202a36; border-color:#2b3b52 }
+  #send{
+    min-height:44px; padding:12px 16px; font-size:15px; border:none; border-radius:10px;
+    background:var(--accent); color:#fff; cursor:pointer; box-shadow:0 3px 10px rgba(0,191,163,.3);
+  }
+  #send:disabled{opacity:.6; cursor:not-allowed}
+
+  @media (max-width: 1200px){
+    :root{ --wrap-w: 94vw; --sidebar-w: 280px; }
+  }
+  @media (max-width: 980px){
+    .main{flex-direction:column}
+    .sidebar{width:100%}
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.png" alt="Zinc Logo">
+  <h1>Zinc Coworker - Your Virtual Colleague</h1>
+  <div class="top-actions">
+    <button class="btn-mini" id="themeToggle">Dark Mode</button>
+    <button class="btn-mini" id="exportChat">Export Chat</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- Left: Chat panel -->
+  <div class="chat-panel">
+    <div class="panel-header">
+      <div class="hint">Ask about client policies or general Zinc questions, or click one of the most common questions below.</div>
+      <button class="btn" id="clearChat">Clear Chat</button>
+    </div>
+
+    <!-- Suggestions -->
+    <div class="suggestions" id="sugs"></div>
+
+    <!-- Conversation -->
+    <div id="chat" class="chat">
+      <div class="bubble a">Hello! Would you like me to answer any questions about clients, or something more general about Zinc?</div>
+    </div>
+  </div>
+
+  <!-- Right: History sidebar -->
+  <aside class="sidebar">
+    <h2>Chat History</h2>
+    <div id="historyList" class="history-list"></div>
+    <div class="side-buttons">
+      <button class="btn" id="clearHistory">Clear History</button>
+    </div>
+  </aside>
+</div>
+
+<!-- Fixed input bar -->
+<div id="composer">
+  <div class="inner">
+    <input id="q" type="text" placeholder="Type your question and press Enter…">
+    <button id="send">Send</button>
+  </div>
+</div>
+
+<script>
+/* Elements */
+const root = document.documentElement;
+const chat = document.getElementById('chat');
+const qEl  = document.getElementById('q');
+const sendBtn = document.getElementById('send');
+const clearChatBtn = document.getElementById('clearChat');
+const clearHistoryBtn = document.getElementById('clearHistory');
+const historyList = document.getElementById('historyList');
+const sugsEl = document.getElementById('sugs');
+const exportBtn = document.getElementById('exportChat');
+const themeToggle = document.getElementById('themeToggle');
+
+/* LocalStorage keys */
+const LS_LOG = 'zincChatLogV2';
+const LS_THEME = 'zincThemeV1';
+
+/* Theme handling */
+function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); themeToggle.textContent = (t==='dark'?'Light Mode':'Dark Mode'); }
+applyTheme(localStorage.getItem(LS_THEME)||'light');
+themeToggle.addEventListener('click', ()=>{
+  const next = (document.documentElement.getAttribute('data-theme')==='dark')?'light':'dark';
+  applyTheme(next);
+  localStorage.setItem(LS_THEME, next);
+});
+
+/* Keep chat clear of fixed composer */
+function padForComposer(){
+  const composer = document.getElementById('composer');
+  const h = composer.getBoundingClientRect().height || 80;
+  chat.style.paddingBottom = (h + 16) + 'px';
+}
+padForComposer();
+window.addEventListener('resize', padForComposer);
+
+/* Suggestions */
+const SUGGESTIONS = [
+  "What’s the settlement criteria for NatWest?",
+  "What is the TEXAS model?",
+  "How do I assist a customer in financial difficulty?",
+  "What’s the American Express Interest Waiver?",
+  "What's the maximum payment plan term for Octopus Energy?"
+];
+function renderSuggestions(){
+  sugsEl.innerHTML = '';
+  SUGGESTIONS.forEach(txt=>{
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.textContent = txt;
+    b.onclick = () => { qEl.value = txt; triggerAsk(); };
+    sugsEl.appendChild(b);
+  });
+}
+
+/* Rendering helpers */
+function renderSources(sources){
+  if (!Array.isArray(sources) || sources.length === 0) return null;
+  const top = sources.slice(0, 3);
+  const div = document.createElement('div');
+  div.className = 'sources';
+  const label = document.createElement('strong');
+  label.textContent = 'Sources: ';
+  div.appendChild(label);
+  top.forEach(s => {
+    const span = document.createElement('span');
+    span.className = 'src';
+    const txt = s?.name || s?.id || s?.url || 'source';
+    span.textContent = txt;
+    div.appendChild(span);
+  });
+  return div;
+}
+function renderCopyRow(text, sources){
+  const row = document.createElement('div');
+  row.className = 'copy-row';
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.textContent = 'Copy answer';
+  const note = document.createElement('span');
+  note.className = 'copy-ok';
+  note.style.display = 'none';
+  note.textContent = 'Copied!';
+  btn.onclick = async () => {
+    const srcList = (Array.isArray(sources) && sources.length)
+      ? '\n\nSources: ' + sources.slice(0,3).map(s => (s?.name || s?.id || s?.url || 'source')).join('; ')
+      : '';
+    const blob = text + srcList;
+    try {
+      await navigator.clipboard.writeText(blob);
+      note.style.display = 'inline';
+      setTimeout(()=>note.style.display='none', 1200);
+    } catch {
+      const ta = document.createElement('textarea'); ta.value = blob; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      note.style.display = 'inline';
+      setTimeout(()=>note.style.display='none', 1200);
+    }
+  };
+  row.appendChild(btn);
+  row.appendChild(note);
+  return row;
+}
+function addBubble(text, cls='a', sources){
+  const div = document.createElement('div');
+  div.className = 'bubble ' + cls;
+  div.textContent = text;
+  chat.appendChild(div);
+  if (cls === 'a'){
+    const sEl = renderSources(sources);
+    if (sEl) chat.appendChild(sEl);
+    chat.appendChild(renderCopyRow(text, sources));
+  }
+  div.scrollIntoView({behavior:'smooth', block:'end'});
+}
+
+/* Typing indicator */
+let typingEl = null;
+function showTyping(){
+  if (typingEl) return;
+  typingEl = document.createElement('div');
+  typingEl.className = 'typing';
+  typingEl.innerHTML = 'Zinc Coworker is typing&nbsp;<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+  chat.appendChild(typingEl);
+  typingEl.scrollIntoView({behavior:'smooth', block:'end'});
+}
+function hideTyping(){
+  if (typingEl && typingEl.parentNode){
+    typingEl.parentNode.removeChild(typingEl);
+    typingEl = null;
+  }
+}
+
+/* Persistent history (Q & A log) */
+function loadLog(){ try{return JSON.parse(localStorage.getItem(LS_LOG)||'[]')}catch(_){return []} }
+function saveLog(arr){ try{ localStorage.setItem(LS_LOG, JSON.stringify(arr.slice(-500))); }catch(_){} }
+
+function renderHistorySidebar(){
+  const log = loadLog();
+  historyList.innerHTML = '';
+  if (!log.length){
+    const emp = document.createElement('div');
+    emp.style.color = 'var(--muted)';
+    emp.style.padding = '10px';
+    emp.textContent = 'No previous items.';
+    historyList.appendChild(emp);
+    return;
+  }
+  // show last 100 questions only
+  [...log].reverse().forEach(item=>{
+    if (item.role !== 'user') return;
+    const d = document.createElement('div');
+    d.className = 'history-item';
+    d.textContent = item.text;
+    d.title = 'Click to re-ask';
+    d.onclick = ()=>{ qEl.value = item.text; qEl.focus(); };
+    historyList.appendChild(d);
+  });
+}
+function appendToLog(role, text, sources){
+  const log = loadLog();
+  log.push({role, text, sources: Array.isArray(sources)?sources.slice(0,3):undefined, t: Date.now()});
+  saveLog(log);
+}
+
+/* Clear buttons */
+function clearChat(){
+  chat.innerHTML = '';
+  addBubble('Chat cleared. You can start again.','a');
+}
+function clearHistoryUI(){
+  localStorage.removeItem(LS_LOG);
+  renderHistorySidebar();
+}
+
+/* Export Chat */
+function exportChat(){
+  const log = loadLog();
+  if (!log.length){ alert('No chat to export yet.'); return; }
+  const lines = log.map(x=>{
+    const role = x.role==='user' ? 'Q' : 'A';
+    const src = (x.sources && x.sources.length) ? `\n  Sources: ${x.sources.map(s=>s.name||s.id||s.url||'source').join('; ')}` : '';
+    return `${role}: ${x.text}${src}`;
+  });
+  const blob = new Blob([lines.join('\n\n')],{type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const d = new Date();
+  const pad = n => (n<10?'0':'')+n;
+  a.download = `zinc-chat-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
+  a.href = url; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* Greeting */
+function isGreeting(text){
+  return /^(hi|hello|hey|yo|good (morning|afternoon|evening))\b/i.test(text.trim());
+}
+
+/* Ask flow */
+async function ask(q){
+  addBubble(q,'q');
+  appendToLog('user', q);
+  if(isGreeting(q)){
+    const a = 'Hello! Would you like me to answer any questions about clients, or something more general about Zinc?';
+    addBubble(a,'a');
+    appendToLog('assistant', a);
+    renderHistorySidebar();
+    return;
+  }
+
+  sendBtn.disabled = true;
+  showTyping();
+  try{
+    const r = await fetch('/api/ask', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ q })
+    });
+    const j = await r.json();
+    hideTyping();
+    let a, src;
+    if (j && j.ok){
+      a = j.answer || 'No answer.';
+      src = j.sources;
+      addBubble(a,'a', src);
+    }else{
+      a = (j && j.answer) || 'I can’t find that in Zinc’s indexed documents.';
+      addBubble(a,'a');
+    }
+    appendToLog('assistant', a, src);
+  }catch(e){
+    hideTyping();
+    const a = 'Server error.';
+    addBubble(a,'a');
+    appendToLog('assistant', a);
+  }
+  sendBtn.disabled = false;
+  renderHistorySidebar();
+}
+
+function triggerAsk(){
+  const v = qEl.value.trim();
+  if (v){ qEl.value=''; ask(v); }
+}
+
+/* Events & init */
+document.getElementById('exportChat').addEventListener('click', exportChat);
+document.getElementById('clearChat').addEventListener('click', clearChat);
+document.getElementById('clearHistory').addEventListener('click', clearHistoryUI);
+
+qEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ triggerAsk(); }});
+sendBtn.addEventListener('click', triggerAsk);
+
+renderSuggestions();
+renderHistorySidebar();
+
+/* Render any existing chat log into the chat panel (latest few for context) */
+(function hydrateChatFromLog(){
+  const log = loadLog();
+  if (!log.length) return;
+  const tail = log.slice(-20); // last 20 items for performance
+  chat.innerHTML = '';
+  tail.forEach(item=>{
+    if (item.role==='user') addBubble(item.text, 'q');
+    else addBubble(item.text, 'a', item.sources);
+  });
+})();
+</script>
+</body>
+</html>
+HTML
+
+# Also copy to /public (many node frameworks serve /public first)
+mkdir -p public
+cp -f index.html public/index.html
+
+# Restart app
+touch /home/site/wwwroot/restart.txt
+
+echo "Deployed: persistent history, export chat, dark mode toggle, typing indicator."
